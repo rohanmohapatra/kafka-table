@@ -4,6 +4,30 @@ option java_package = "edu.sjsu.cs249.kafkaTable";
 
 package kafkaTable;
 
+service KafkaTable {
+    rpc inc(IncRequest) returns (IncResponse);
+    rcp get(GetRequest) returns (GetResponse);
+}
+
+message IncRequest {
+  string key = 1;
+  // if the key does not exist, it will be created with this value, otherwise the value
+  // if the existing key will be incremented by this value
+  int32 incValue = 2;
+}
+
+message IncResponse {
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  // if the key does not exist, the response will be zero
+  int32 value = 2;
+}
+
 service KafkaTableDebug {
   rpc debug(ChainDebugRequest) returns (ChainDebugResponse);
 }
