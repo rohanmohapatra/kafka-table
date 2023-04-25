@@ -6,7 +6,12 @@ package kafkaTable;
 
 service KafkaTable {
     rpc inc(IncRequest) returns (IncResponse);
-    rcp get(GetRequest) returns (GetResponse);
+    rpc get(GetRequest) returns (GetResponse);
+}
+
+message ClientXid {
+    string clientid = 1;
+    int32 counter = 2;
 }
 
 message IncRequest {
@@ -14,6 +19,7 @@ message IncRequest {
   // if the key does not exist, it will be created with this value, otherwise the value
   // if the existing key will be incremented by this value
   int32 incValue = 2;
+  ClientXid xid = 3;
 }
 
 message IncResponse {
@@ -21,6 +27,7 @@ message IncResponse {
 
 message GetRequest {
   string key = 1;
+  ClientXid xid = 2;
 }
 
 message GetResponse {
@@ -40,10 +47,24 @@ message ChainDebugResponse {
 
 message PublishedItem {
   oneof item {
-    SimpleMessage simpleMessage = 1;
+    IncRequest inc = 1;
+    GetRequest get = 2;
   }
 }
 
+message SnapshotOrdering {
+    string replicaId = 1;
+}
+
+message KeyValue {
+    string key = 1;
+    int32 value = 2;
+}
+message Snapshot {
+    map<string, int32> values = 1;
+    int64 relativeOffset = 2;
+    string publishingReplicaId = 3;
+}
 message SimpleMessage {
   string message = 1;
 }

@@ -21,7 +21,7 @@
             <dependency>
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-bom</artifactId>
-                <version>RELEASE</version>
+                <version>1.54.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -111,6 +111,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>3.0.2</version>
                 <executions>
                     <execution>
                         <goals>

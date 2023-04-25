@@ -66,6 +66,10 @@ public class Main {
         while (true) {
             var records = consumer.poll(Duration.ofSeconds(20));
             for (var record: records) {
+                System.out.println(record.headers());
+                System.out.println(record.timestamp());
+                System.out.println(record.timestampType());
+                System.out.println(record.offset());
                 var message = SimpleMessage.parseFrom(record.value());
                 System.out.println(message);
             }
