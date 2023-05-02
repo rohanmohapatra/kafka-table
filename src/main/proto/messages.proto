@@ -50,7 +50,11 @@ message Snapshot {
 
 service KafkaTableDebug {
   rpc debug(KafkaTableDebugRequest) returns (KafkaTableDebugResponse);
+  rpc exit(ExitRequest) returns (ExitResponse);
 }
+
+message ExitRequest {}
+message ExitResponse {}
 
 message KafkaTableDebugRequest {
 }
