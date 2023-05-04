@@ -41,11 +41,13 @@ message Snapshot {
   string replicaId = 1;
   // state table
   map<string, int32> table = 2;
-  // kafka offset the snapshot is relative to
-  int64 offset = 3;
+  // operations offset the snapshot is relative to
+  int64 operationsOffset = 3;
   // maps the client id to the last counter processed
   // clients can have only one update going at a time
   map<string, int32> clientCounters = 4;
+  // snapshotOrdering offset that triggered this snapshot
+  int64 snapshotOrderingOffset = 5;
 }
 
 service KafkaTableDebug {
