@@ -28,6 +28,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -107,6 +108,47 @@ public class Main {
         return 0;
     }
 
+    @Command(description = "delete the operations, snapshotOrder, and snapshot topics for a given prefix")
+    int deleteTableTopics(@Parameters(paramLabel = "kafkaHost:port") String server,
+                          @Parameters(paramLabel = "prefix") String prefix) throws ExecutionException, InterruptedException {
+        var properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, server);
+        try (var admin = Admin.create(properties)) {
+            List<String> topics = List.of(
+                    prefix + "operations",
+                    prefix + "snapshot",
+                    prefix + "snapshotOrdering"
+            );
+            admin.deleteTopics(topics);
+            System.out.println("deleted topics: " + Arrays.toString(topics.toArray()));
+        }
+        return 0;
+    }
+    @Command(description = "create the operations, snapshotOrder, and snapshot topics for a given prefix")
+    int createTableTopics(@Parameters(paramLabel = "kafkaHost:port") String server,
+                          @Parameters(paramLabel = "prefix") String prefix) throws ExecutionException, InterruptedException {
+        var properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, server);
+        try (var admin = Admin.create(properties)) {
+            var rc = admin.createTopics(List.of(
+                    new NewTopic(prefix + "operations", 1, (short) 1),
+                    new NewTopic(prefix + "snapshot", 1, (short) 1),
+                    new NewTopic(prefix + "snapshotOrdering", 1, (short) 1)
+                    ));
+            rc.all().get();
+        }
+        var producer = new KafkaProducer<>(properties, new StringSerializer(), new ByteArraySerializer());
+        var result = producer.send(new ProducerRecord<>(prefix + "snapshot", Snapshot.newBuilder()
+                .setReplicaId("initializer")
+                .setOperationsOffset(0)
+                .setSnapshotOrderingOffset(0)
+                .putAllTable(Map.of())
+                .putAllClientCounters(Map.of())
+                .build().toByteArray()));
+        result.get();
+        return 0;
+
+    }
     @Command
     int get(@Parameters(paramLabel = "key") String key,
             @Parameters(paramLabel = "clientId") String id,
