@@ -6,9 +6,11 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -27,17 +29,20 @@ import java.io.InputStreamReader;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 @Command
 public class Main {
     static {
         // quiet some kafka messages
-        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
+        //System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
     }
 
     @Command
@@ -60,17 +65,34 @@ public class Main {
     }
 
     @Command
-    int consume(@Parameters(paramLabel = "kafkaHost:port") String server,
-                @Parameters(paramLabel = "topic-name") String name,
-                @Parameters(paramLabel = "group-id") String id) throws InvalidProtocolBufferException {
+    int consume(@Parameters(paramLabel = "topic-name") String name,
+                @Parameters(paramLabel = "group-id") String id)
+            throws InvalidProtocolBufferException, InterruptedException {
         var properties = new Properties();
-        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, server);
-        properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, id);
+        properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
         var consumer = new KafkaConsumer<>(properties, new StringDeserializer(), new ByteArrayDeserializer());
-        consumer.subscribe(List.of(name));
+        System.out.println("Starting at " + new Date());
+        var sem = new Semaphore(0);
+        consumer.subscribe(List.of(name), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> collection) {
+                System.out.println("Didn't expect the revoke!");
+            }
+
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> collection) {
+                System.out.println("Partition assigned");
+                collection.stream().forEach(t -> consumer.seek(t, 0));
+                sem.release();
+            }
+        });
+        System.out.println("first poll count: " + consumer.poll(0).count());
+        sem.acquire();
+        System.out.println("Ready to consume at " + new Date());
         while (true) {
-            var records = consumer.poll(Duration.ofSeconds(1));
+            var records = consumer.poll(Duration.ofSeconds(20));
+            System.out.println("Got: " + records.count());
             for (var record: records) {
                 System.out.println(record.headers());
                 System.out.println(record.timestamp());
@@ -140,8 +162,8 @@ public class Main {
         var producer = new KafkaProducer<>(properties, new StringSerializer(), new ByteArraySerializer());
         var result = producer.send(new ProducerRecord<>(prefix + "snapshot", Snapshot.newBuilder()
                 .setReplicaId("initializer")
-                .setOperationsOffset(0)
-                .setSnapshotOrderingOffset(0)
+                .setOperationsOffset(-1)
+                .setSnapshotOrderingOffset(-1)
                 .putAllTable(Map.of())
                 .putAllClientCounters(Map.of())
                 .build().toByteArray()));
