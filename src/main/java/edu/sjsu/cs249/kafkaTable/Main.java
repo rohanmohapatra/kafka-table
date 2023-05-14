@@ -1,13 +1,13 @@
 package edu.sjsu.cs249.kafkaTable;
 
+import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.InvalidProtocolBufferException;
+import edu.sjsu.cs249.kafkaTable.cli.ReplicaCli;
 import io.grpc.ManagedChannelBuilder;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -15,9 +15,6 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.simple.SimpleLogger;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -26,23 +23,20 @@ import picocli.CommandLine.Parameters;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.time.Clock;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import static edu.sjsu.cs249.kafkaTable.Constants.*;
 
 @Command
 public class Main {
     static {
         // quiet some kafka messages
-        //System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn");
     }
 
     @Command
@@ -65,11 +59,13 @@ public class Main {
     }
 
     @Command
-    int consume(@Parameters(paramLabel = "topic-name") String name,
+    int consume(@Parameters(paramLabel = "kafkaHost:port") String server,
+                @Parameters(paramLabel = "topic-name") String name,
                 @Parameters(paramLabel = "group-id") String id)
             throws InvalidProtocolBufferException, InterruptedException {
         var properties = new Properties();
-        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, id);
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, server);
+        properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, id+System.currentTimeMillis());
         properties.setProperty(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
         var consumer = new KafkaConsumer<>(properties, new StringDeserializer(), new ByteArrayDeserializer());
         System.out.println("Starting at " + new Date());
@@ -87,20 +83,29 @@ public class Main {
                 sem.release();
             }
         });
+
+
+
+
         System.out.println("first poll count: " + consumer.poll(0).count());
         sem.acquire();
         System.out.println("Ready to consume at " + new Date());
         while (true) {
             var records = consumer.poll(Duration.ofSeconds(20));
             System.out.println("Got: " + records.count());
+            int incReqs = 0;
             for (var record: records) {
-                System.out.println(record.headers());
-                System.out.println(record.timestamp());
-                System.out.println(record.timestampType());
+//                System.out.println(record.headers());
+//                System.out.println(record.timestamp());
+//                System.out.println(record.timestampType());
                 System.out.println(record.offset());
-                var message = SimpleMessage.parseFrom(record.value());
+                var message = parser(name, record);
                 System.out.println(message);
+                if ((message.getClass() == PublishedItem.class) && ((PublishedItem)message).hasInc()){
+                    incReqs ++;
+                }
             }
+            System.out.println("Got inc requests:" + incReqs);
         }
     }
 
@@ -112,7 +117,8 @@ public class Main {
             var rc = admin.listTopics();
             var listings = rc.listings().get();
             for (var l : listings) {
-                System.out.println(l);
+                if (l.name().contains("rohan"))
+                    System.out.println(l);
             }
         }
         return 0;
@@ -189,7 +195,7 @@ public class Main {
             @Option(names = "--repeat") boolean repeat,
             @Option(names = "--concurrent") boolean concurrent,
             @Parameters(paramLabel = "grpcHost:port", arity = "1..*") String[] servers) {
-        int count = repeat ? 2 : 1;
+        int count = repeat ? (new Random()).nextInt(2, 10) : 1;
         var clientXid = ClientXid.newBuilder().setClientid(id).setCounter((int)(System.currentTimeMillis()/1000)).build();
         System.out.println(clientXid);
         for (int i = 0; i < count; i++) {
@@ -198,7 +204,7 @@ public class Main {
             var result = s.map(server -> {
                 var stub = KafkaTableGrpc.newBlockingStub(ManagedChannelBuilder.forTarget(server).usePlaintext().build());
                 try {
-                    stub.inc(IncRequest.newBuilder().setKey(key).setIncValue(amount).setXid(clientXid).build());
+                    stub.withDeadlineAfter(5, TimeUnit.SECONDS).inc(IncRequest.newBuilder().setKey(key).setIncValue(amount).setXid(clientXid).build());
                     return server + ": success";
                 } catch (Exception e) {
                     return server + ": " + e.getMessage();
@@ -208,7 +214,40 @@ public class Main {
         }
         return 0;
     }
+
+    @Command
+    int blastInc(@Parameters(paramLabel = "key") String key,
+                 @Parameters(paramLabel = "amount") int amount,
+                 @Parameters(paramLabel = "clientId") String id,
+                 @Parameters(paramLabel = "blastRadius") int blastRadius,
+                 @Option(names = "--repeat") boolean repeat,
+                 @Option(names = "--concurrent") boolean concurrent,
+                 @Parameters(paramLabel = "grpcHost:port", arity = "1..*") String[] servers) throws InterruptedException {
+
+        for (int i=0; i < blastRadius; i++){
+            inc(key, amount, id, repeat ? true: false, concurrent ? true: false, servers);
+            Thread.sleep(Duration.ofSeconds(2));
+        }
+
+        return 0;
+    }
+
+    private GeneratedMessageV3 parser(String topicName, ConsumerRecord<String,byte[]> record) throws InvalidProtocolBufferException {
+        if (topicName.contains(OPERATIONS_TOPIC_NAME)){
+            return PublishedItem.parseFrom(record.value());
+        }
+        if (topicName.contains(SNAPSHOT_TOPIC_NAME)){
+            return Snapshot.parseFrom(record.value());
+        }
+        if (topicName.contains(SNAPSHOT_ORDERING_TOPIC_NAME)){
+            return SnapshotOrdering.parseFrom(record.value());
+        }
+        return SimpleMessage.parseFrom(record.value());
+    }
+
     public static void main(String[] args) {
-        System.exit(new CommandLine(new Main()).execute(args));
+        System.exit(new CommandLine(new Main())
+                .addSubcommand("replica", new ReplicaCli())
+                .execute(args));
     }
 }
