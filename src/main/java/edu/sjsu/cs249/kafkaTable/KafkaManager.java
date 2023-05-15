@@ -178,10 +178,16 @@ public class KafkaManager {
                         if (GrpcState.getInstance().pendingGets.containsKey(getRequest.getXid())) {
                             StreamObserver<GetResponse> responseObserver = GrpcState.getInstance().pendingGets.get(getRequest.getXid());
                             System.out.println(ReplicaState.getInstance().table);
-                            responseObserver.onNext(GetResponse.newBuilder()
-                                    .setValue(ReplicaState.getInstance().table.getOrDefault(getRequest.getKey(), 0))
-                                    .build());
-                            responseObserver.onCompleted();
+                            try {
+                                responseObserver.onNext(GetResponse.newBuilder()
+                                        .setValue(ReplicaState.getInstance().table.getOrDefault(getRequest.getKey(), 0))
+                                        .build());
+                                responseObserver.onCompleted();
+                            }
+                            catch (Exception e){
+                                // no-op
+                                System.out.println(e.getMessage());
+                            }
                             GrpcState.getInstance().pendingIncs.remove(getRequest.getXid());
                             KafkaState.getInstance().clientCounters.put(getRequest.getXid().getClientid(), getRequest.getXid().getCounter());
                         }
