@@ -15,13 +15,18 @@ public class KafkaTableDebugService extends KafkaTableDebugGrpc.KafkaTableDebugI
 
     @Override
     public void debug(KafkaTableDebugRequest request, StreamObserver<KafkaTableDebugResponse> responseObserver) {
-        synchronized (this.grpcServer){
-            var snapshot = KafkaState.getInstance().createSnapshot();
-            responseObserver.onNext(KafkaTableDebugResponse.newBuilder()
-                            .setSnapshot(snapshot)
-                            .build());
-            responseObserver.onCompleted();
-        }
+//        synchronized (this.grpcServer){
+//            var snapshot = KafkaState.getInstance().createSnapshot();
+//            responseObserver.onNext(KafkaTableDebugResponse.newBuilder()
+//                            .setSnapshot(snapshot)
+//                            .build());
+//            responseObserver.onCompleted();
+//        }
+        var snapshot = KafkaState.getInstance().createSnapshot();
+        responseObserver.onNext(KafkaTableDebugResponse.newBuilder()
+                .setSnapshot(snapshot)
+                .build());
+        responseObserver.onCompleted();
     }
 
     @Override

@@ -38,13 +38,16 @@ public class KafkaState {
     }
 
     public Snapshot createSnapshot() {
-        var snapshot = Snapshot.newBuilder()
-                .setReplicaId(ReplicaState.getInstance().replicaName)
-                .putAllTable(ReplicaState.getInstance().table)
-                .setSnapshotOrderingOffset(snapshotOrderingOffset.get())
-                .setOperationsOffset(operationsOffset.get())
-                .putAllClientCounters(clientCounters)
-                .build();
+        Snapshot snapshot = null;
+        synchronized (clientCounters) {
+            snapshot = Snapshot.newBuilder()
+                    .setReplicaId(ReplicaState.getInstance().replicaName)
+                    .putAllTable(ReplicaState.getInstance().table)
+                    .setSnapshotOrderingOffset(snapshotOrderingOffset.get())
+                    .setOperationsOffset(operationsOffset.get())
+                    .putAllClientCounters(clientCounters)
+                    .build();
+        }
         System.out.println("Created a snapshot: "+ snapshot);
         return snapshot;
     }

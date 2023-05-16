@@ -171,28 +171,65 @@ public class KafkaManager {
             for (var record: records) {
                 var item = PublishedItem.parseFrom(record.value());
                 if (item.hasGet()) {
+                    StreamObserver<GetResponse> responseObserver = null;
                     // No - op
+                    var getRequest = item.getGet();
+                    System.out.println("Get Request from kafka:" + getRequest);
                     synchronized (GrpcState.getInstance().pendingGets) {
-                        var getRequest = item.getGet();
-                        System.out.println("Get Request from kafka:" + getRequest);
                         if (GrpcState.getInstance().pendingGets.containsKey(getRequest.getXid())) {
-                            StreamObserver<GetResponse> responseObserver = GrpcState.getInstance().pendingGets.get(getRequest.getXid());
-                            System.out.println(ReplicaState.getInstance().table);
-                            try {
-                                responseObserver.onNext(GetResponse.newBuilder()
-                                        .setValue(ReplicaState.getInstance().table.getOrDefault(getRequest.getKey(), 0))
-                                        .build());
-                                responseObserver.onCompleted();
-                            }
-                            catch (Exception e){
-                                // no-op
-                                System.out.println(e.getMessage());
-                            }
-                            GrpcState.getInstance().pendingIncs.remove(getRequest.getXid());
+                            responseObserver = GrpcState.getInstance().pendingGets.get(getRequest.getXid());
+                        }
+                        System.out.println("Sending back Get Request: " + ReplicaState.getInstance().table);
+                    }
+                    synchronized (KafkaState.getInstance().clientCounters) {
+                        if (getRequest.getXid().getCounter() >
+                                KafkaState.getInstance().clientCounters.getOrDefault(getRequest.getXid().getClientid(), 0)
+                        ) {
                             KafkaState.getInstance().clientCounters.put(getRequest.getXid().getClientid(), getRequest.getXid().getCounter());
                         }
-
                     }
+                    try {
+                        responseObserver.onNext(GetResponse.newBuilder()
+                                .setValue(ReplicaState.getInstance().table.getOrDefault(getRequest.getKey(), 0))
+                                .build());
+                        responseObserver.onCompleted();
+                    }
+                    catch (Exception e){
+                        // no-op
+                        System.out.println(e.getMessage());
+                    }
+                    synchronized (GrpcState.getInstance().pendingGets) {
+                        GrpcState.getInstance().pendingIncs.remove(getRequest.getXid());
+                    }
+
+
+
+
+
+//                        if (GrpcState.getInstance().pendingGets.containsKey(getRequest.getXid())) {
+//                            StreamObserver<GetResponse> responseObserver = GrpcState.getInstance().pendingGets.get(getRequest.getXid());
+//                            System.out.println("Sending back Get Request: " + ReplicaState.getInstance().table);
+//                            if (getRequest.getXid().getCounter() >
+//                                    KafkaState.getInstance().clientCounters.getOrDefault(getRequest.getXid().getClientid(), 0)
+//                            ){
+//                                KafkaState.getInstance().clientCounters.put(getRequest.getXid().getClientid(), getRequest.getXid().getCounter());
+//                            }
+//                            try {
+//                                responseObserver.onNext(GetResponse.newBuilder()
+//                                        .setValue(ReplicaState.getInstance().table.getOrDefault(getRequest.getKey(), 0))
+//                                        .build());
+//                                responseObserver.onCompleted();
+//                            }
+//                            catch (Exception e){
+//                                // no-op
+//                                System.out.println(e.getMessage());
+//                            }
+//                            GrpcState.getInstance().pendingIncs.remove(getRequest.getXid());
+////                            KafkaState.getInstance().clientCounters.put(getRequest.getXid().getClientid(), getRequest.getXid().getCounter());
+//
+//                        }
+//
+//                    }
                 } else if (item.hasInc()) {
                     // Check if the clientXid and counter is greater than anything we have from user
                     // Then add to table with increment
@@ -202,13 +239,12 @@ public class KafkaManager {
                     if (incRequest.getXid().getCounter() >
                             KafkaState.getInstance().clientCounters.getOrDefault(incRequest.getXid().getClientid(), 0)
                     ) {
+                        KafkaState.getInstance().clientCounters.put(incRequest.getXid().getClientid(), incRequest.getXid().getCounter());
                         Integer value = ReplicaState.getInstance().table.getOrDefault(incRequest.getKey(), 0);
                         if (value + incRequest.getIncValue() >= 0) {
                             ReplicaState.getInstance().table.put(incRequest.getKey(), value + incRequest.getIncValue());
                             System.out.println("Put into table");
                         }
-
-                        KafkaState.getInstance().clientCounters.put(incRequest.getXid().getClientid(), incRequest.getXid().getCounter());
                     }
                     synchronized (GrpcState.getInstance().pendingIncs) {
                         if (GrpcState.getInstance().pendingIncs.containsKey(incRequest.getXid())) {
@@ -221,7 +257,6 @@ public class KafkaManager {
                     System.out.println("Trying to send back inc request: " + (responseObserver != null));
                     if (responseObserver != null) {
                         System.out.println("Sent back inc request");
-                        // TODO: Bug :  Stream is already completed, no further calls are allowed
                         try {
                             responseObserver.onNext(IncResponse.newBuilder().build());
                             responseObserver.onCompleted();
