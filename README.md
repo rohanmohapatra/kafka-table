@@ -13,9 +13,9 @@ Periodically a replica snapshots the state of the table into the log to enable f
 It is commonly used in various applications where efficient lookup and insertion of key-value pairs are required, and the number of elements in the hashtable can change dynamically over time.
  
 ## How can you use it?
-Clients will use gRPC to make INC and GETget requests to a replica, you can use any replica.
+Clients will use gRPC to make INC and GET requests to a replica, you can use any replica.
 
-## Building
+## Build the project
 ```
 mvn package
 ```
