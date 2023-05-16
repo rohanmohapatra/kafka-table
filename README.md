@@ -22,5 +22,5 @@ mvn package
 
 ## Running the replica
 ```
-java -jar .\target\kafka-table-1.0-SNAPSHOT-spring-boot.jar replica cs-reed-07.class.homeofcode.com:9092 replicaId grpcPort snaphotFrequency topicPrefix
+java -jar .\target\kafka-table-1.0-SNAPSHOT-spring-boot.jar replica kafkaBootstrapServer replicaId grpcPort snaphotFrequency topicPrefix
 ```
